@@ -1,5 +1,278 @@
-import numpy as np
-import mplfinance as mpf
-import yfinance as yf
-import matplotlib as mpl
-import matplotlib.pyplot as plt
+# Install + Load
+# Install required packages
+packages <- c(
+  "tseries",    # ADF, ARIMA, GARCH
+  "forecast",   # Forecasting tools
+  "readr",      # CSV loader
+  "readxl",     # Excel loader
+  "writexl",    # Export Excel if needed
+  "ggplot2",    # Plots
+  "dplyr",      # Data handling
+  "ARDL",       # ARDL / Bounds / ECM
+  "lmtest",     # BG test, BP test
+  "vars",       # VAR
+  "urca",       # Johansen / Unit root
+  "tsDyn",      # VECM
+  "FinTS",      # ARCH LM test
+  "rugarch",    # GARCH family
+  "plm",        # Panel data
+  "haven",      # Stata/SPSS datasets if needed
+  "MASS",       # General statistical tools
+  "psych",      # Summary / describe
+  "corrplot",   # Correlation plots
+  "factoextra", # Extra diagnostics
+  "caret",      # ML utilities
+  "curl"        # URL loading
+)
+
+# Install missing packages only
+installed <- packages %in% rownames(installed.packages())
+
+if(any(!installed)) {
+  install.packages(packages[!installed], dependencies = TRUE)
+}
+
+# Load all libraries
+lapply(packages, library, character.only = TRUE)
+
+
+
+—-------------------------------
+install.packages("r	eadxl")
+—-------------------------------
+library(tseries)
+library(forecast)
+library(readr)
+library(readxl)
+library(writexl)
+library(ggplot2)
+library(dplyr)
+library(ARDL)
+library(lmtest)
+library(vars)
+library(urca)
+library(tsDyn)
+library(FinTS)
+library(rugarch)
+library(plm)
+library(haven)
+library(MASS)
+library(psych)
+library(corrplot)
+library(factoextra)
+library(caret)
+library(curl)
+
+# Load Data (CSV / Excel)
+# mydata <- read.csv("data.csv")
+mydata <- read_excel("data.xlsx")
+
+
+########################
+# ARIMA
+########################
+Y <- mydata$ppi
+d.Y <- diff(Y)
+
+plot.ts(Y); plot.ts(d.Y); summary(Y)
+
+adf.test(Y, k=0)
+adf.test(Y)
+adf.test(d.Y, k=0)
+adf.test(d.Y)
+
+acf(Y); pacf(Y)
+acf(d.Y); pacf(d.Y)
+
+arima(Y, order=c(1,0,0))
+arima(Y, order=c(0,0,1))
+arima(Y, order=c(1,0,1))
+arima(d.Y, order=c(1,0,1))
+
+m <- arima(Y, order=c(1,0,1))
+pred <- predict(m, n.ahead=100)
+
+plot.ts(Y, xlim=c(1,length(Y)+100))
+lines((length(Y)+1):(length(Y)+100), pred$pred, col="blue")
+lines((length(Y)+1):(length(Y)+100), pred$pred + 2*pred$se, col="red")
+lines((length(Y)+1):(length(Y)+100), pred$pred - 2*pred$se, col="red")
+
+
+########################
+# ARDL
+########################
+adf.test(mydata$LRM); adf.test(diff(mydata$LRM))
+adf.test(mydata$LRY); adf.test(diff(mydata$LRY))
+
+model_formula <- LRM ~ LRY + IBO + IDE
+
+ardl_model <- auto_ardl(model_formula, data=mydata, max_order=c(5,4,4,4))
+summary(ardl_model)
+
+bounds_f_test(ardl_model$best_model, case=3)
+bounds_t_test(ardl_model$best_model, case=3)
+
+multipliers(ardl_model$best_model)
+
+uecm_model <- uecm(ardl_model$best_model)
+summary(uecm_model)
+
+bgtest(ardl_model$best_model, order=3)
+bptest(ardl_model$best_model)
+jarque.bera.test(residuals(ardl_model$best_model))
+
+
+########################
+# VAR
+########################
+Y <- mydata$ppi
+X1 <- mydata$gdp
+
+adf.test(Y, k=0); adf.test(diff(Y), k=0)
+adf.test(X1, k=0); adf.test(diff(X1), k=0)
+
+summary(ur.df(Y, type="trend", lags=0))
+
+vars_data <- mydata[, c("ppi","gdp")]
+
+lag_sel <- VARselect(vars_data, lag.max=10, type="const")
+lag_sel$selection
+
+var_m <- VAR(vars_data, p=4, type="const")
+summary(var_m)
+
+serial.test(var_m, lags.pt=16, type="PT.asymptotic")
+arch.test(var_m, lags.multi=5)
+normality.test(var_m)
+
+roots(var_m)
+
+predict(var_m, n.ahead=8, ci=0.95)
+
+irf(var_m, impulse="ppi", response="gdp", n.ahead=10, boot=TRUE, ci=0.95)
+
+fevd(var_m, n.ahead=10)
+
+causality(var_m, cause="gdp")
+
+
+########################
+# VECM
+########################
+vars_data <- mydata[, c("gdp","cpi","m3")]
+
+lagsel <- VARselect(vars_data, lag.max=7, type="const")
+lagsel$selection
+
+ctest_t <- ca.jo(vars_data, type="trace", ecdet="const", K=4)
+summary(ctest_t)
+
+ctest_e <- ca.jo(vars_data, type="eigen", ecdet="const", K=4)
+summary(ctest_e)
+
+Model1 <- VECM(vars_data, lag=4, r=1, estim="2OLS")
+summary(Model1)
+
+m_var <- vec2var(ctest_t, r=1)
+
+serial.test(m_var, lags.pt=5, type="PT.asymptotic")
+arch.test(m_var, lags.multi=15, multivariate.only=TRUE)
+normality.test(m_var, multivariate.only=TRUE)
+
+irf(m_var, impulse="gdp", response="ppi", n.ahead=20)
+
+fevd(m_var, n.ahead=10)
+
+
+########################
+# ARCH / GARCH
+########################
+returns <- mydata$returns
+
+ArchTest(returns, lags=1)
+
+arch1 <- garch(returns, order=c(0,1))
+summary(arch1)
+
+spec <- ugarchspec(
+  variance.model=list(model="sGARCH", garchOrder=c(1,1)),
+  mean.model=list(armaOrder=c(0,0), include.mean=TRUE),
+  distribution.model="norm"
+)
+
+fit <- ugarchfit(spec=spec, data=returns)
+
+show(fit)
+infocriteria(fit)
+
+gjr_spec <- ugarchspec(
+  variance.model=list(model="gjrGARCH", garchOrder=c(1,1)),
+  mean.model=list(armaOrder=c(1,1)),
+  distribution.model="sstd"
+)
+
+egarch_spec <- ugarchspec(
+  variance.model=list(model="eGARCH", garchOrder=c(1,1)),
+  distribution.model="sstd"
+)
+
+fcast <- ugarchforecast(fit, n.ahead=10)
+
+plot(sigma(fcast))
+print(fcast)
+
+
+########################
+# PANEL DATA
+########################
+model_ols <- plm(
+  lscrap ~ tothrs + d88 + d89 + grant + grant_1,
+  data=JTRAIN,
+  index=c("fcode","year"),
+  model="pooling"
+)
+summary(model_ols)
+
+model_fe <- plm(
+  lscrap ~ tothrs + d88 + d89 + grant + grant_1,
+  data=JTRAIN,
+  index=c("fcode","year"),
+  model="within",
+  effect="individual"
+)
+summary(model_fe)
+
+fixef(model_fe, type="dmean")
+
+model_re <- plm(
+  lscrap ~ tothrs + d88 + d89 + grant + grant_1,
+  data=JTRAIN,
+  index=c("fcode","year"),
+  model="random",
+  random.method="walhus"
+)
+summary(model_re)
+
+phtest(model_fe, model_re)
+
+model_be <- update(model_ols, model="between")
+summary(model_be)
+
+JTRAIN <- JTRAIN %>%
+  group_by(fcode) %>%
+  mutate(
+    dlscrap = lscrap - lag(lscrap),
+    dtothrs = tothrs - lag(tothrs),
+    dgrant = grant - lag(grant)
+  )
+
+model_fd <- lm(dlscrap ~ dtothrs + dgrant, data=JTRAIN)
+summary(model_fd)
+
+model_dv <- plm(
+  lscrap ~ tothrs + factor(fcode),
+  data=JTRAIN,
+  index=c("fcode","year"),
+  model="pooling"
+)
+summary(model_dv)
