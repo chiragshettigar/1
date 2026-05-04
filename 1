@@ -1,1 +1,278 @@
-python
+# =========================================================
+# 0 · P I P I N S T A L L S (run in terminal / shell)
+# pip install yfinance mplfinance matplotlib numpy pandas statsmodels
+# =========================================================
+
+
+# =========================================================
+# 1 · I M P O R T S
+# =========================================================
+
+# notebook 1 — charts & OHLC
+import numpy as np
+import mplfinance as mpf
+import yfinance as yf
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+
+# notebook 2 — portfolio
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import yfinance as yf
+import statsmodels.api as sm
+
+
+# =========================================================
+# 2 · D O W N L O A D  S T O C K  D A T A
+# =========================================================
+
+# single stock
+stock = yf.download("RELIANCE.NS", start='2019-01-01', end='2024-12-31')
+
+# multiple tickers (loop)
+tickers = ['RELIANCE.NS', 'ASIANPAINT.NS', 'M&M.NS', 'AXISBANK.NS']
+pf = pd.DataFrame()
+for t in tickers:
+    pf[t] = yf.download(t, start='2020-01-01', end='2026-03-01')['Close']
+
+
+# =========================================================
+# 3 · D A T A  P R E P  &  S L I C I N G
+# =========================================================
+
+# keep OHLCV columns
+stock = stock[['Open','High','Low','Close','Volume']]
+stock.columns = ['Open','High','Low','Close','Volume']
+
+# time slices
+# trading days: ~252/yr, 63/qtr
+last3m = stock.tail(63)
+last6m = stock.tail(126)
+last1y = stock.tail(252)
+
+# 63 = 3 months · 126 = 6 months · 252 = 1 year of trading days
+
+# resample to weekly
+weekly = stock.resample('W').agg({
+    'Open' : 'first',
+    'High' : 'max',
+    'Low' : 'min',
+    'Close' : 'last',
+    'Volume': 'sum'
+})
+
+# Aggregates daily bars into weekly OHLCV bars. Use 'M' for monthly.
+
+
+# =========================================================
+# 4 · B A S I C  M A T P L O T L I B  C H A R T
+# =========================================================
+
+# simple line plot
+plt.plot(stock['Close'])
+plt.grid(True)
+
+# side-by-side subplots
+plt.figure(figsize=(10,5))
+
+plt.subplot(121)  # 1 row, 2 cols, plot 1
+plt.plot(df['Close'])
+plt.xlabel('Date')
+plt.ylabel('Price')
+plt.title('Price')
+
+plt.subplot(122)  # plot 2
+plt.plot(df['return'])
+plt.title('Returns')
+
+
+# =========================================================
+# 5 · M P L F I N A N C E  C A N D L E S T I C K  C H A R T S
+# =========================================================
+
+# basic candle
+mpf.plot(stock_last3m, type='candle', volume=True)
+
+# Requires DataFrame with Open/High/Low/Close/Volume and a DatetimeIndex.
+
+# custom style + moving averages
+mc = mpf.make_marketcolors(
+    up='Green',
+    down='red',
+    edge='inherit',
+    wick='inherit',
+    volume='violet'
+)
+
+style = mpf.make_mpf_style(
+    base_mpf_style='classic',
+    marketcolors=mc,
+    facecolor='white',
+    gridcolor='black'
+)
+
+mpf.plot(
+    stock_last1y,
+    type='candle',
+    style=style,
+    title="RELIANCE OHLC Chart",
+    xlabel='dates',
+    ylabel='Prices',
+    figratio=(12,6),
+    figscale=1.2,
+    figsize=(10,6),
+    volume=True,
+    mav=[10,20,30],
+    mavcolors=['purple','pink','violet']
+)
+
+# mav = moving average windows · figratio = aspect ratio
+
+
+# =========================================================
+# 6 · R S I — R E L A T I V E  S T R E N G T H  I N D E X
+# =========================================================
+
+# calculate RSI (14-day)
+delta = stock_last1y['Close'].diff()
+
+# separate gains and losses
+gain = delta.clip(lower=0)
+loss = -delta.clip(upper=0)
+
+# 14-period rolling averages
+avg_gain = gain.rolling(14).mean()
+avg_loss = loss.rolling(14).mean()
+
+rs = avg_gain / avg_loss
+stock_last1y['RSI'] = 100 - (100 / (1 + rs))
+
+# RSI > 70 = overbought · RSI < 30 = oversold
+
+# plot RSI as addplot panel
+apds = [
+    mpf.make_addplot(stock_last1y['RSI'], panel=1, color='hotpink'),
+    mpf.make_addplot([70]*len(stock_last1y), panel=1, color='red', linestyle='--'),
+    mpf.make_addplot([30]*len(stock_last1y), panel=1, color='green', linestyle='--')
+]
+
+mpf.plot(
+    stock_last1y,
+    type='candle',
+    style=style,
+    addplot=apds,
+    panel_ratios=(3,1,1),
+    volume=True,
+    volume_panel=2,
+    figsize=(10,7),
+    mav=[20,50],
+    mavcolors=['purple','hotpink']
+)
+
+# panel=0 = candle · panel=1 = RSI · panel=2 = volume
+
+
+# =========================================================
+# 7 · R E T U R N S  &  L O G  R E T U R N S
+# =========================================================
+
+# simple return (Pt / Pt-1) - 1
+df['return'] = (df['Close'] / df['Close'].shift(1)) - 1
+
+# log return ln(Pt / Pt-1)
+df['log_return'] = np.log(df['Close'] / df['Close'].shift(1))
+
+# portfolio returns (multiple stocks)
+pf_returns = (pf / pf.shift(1)) - 1
+
+# select 2 stocks
+pf_returns = pf_returns[["RELIANCE.NS", "M&M.NS"]]
+
+
+# =========================================================
+# 8 · R I S K — S T D  D E V  &  V A R I A N C E
+# =========================================================
+
+# daily std dev
+pf_returns['RELIANCE.NS'].std()
+
+# daily variance
+pf_returns['RELIANCE.NS'].var()
+
+# annualise
+pf_returns['RELIANCE.NS'].std() * 252**0.5
+pf_returns['RELIANCE.NS'].var() * 252
+
+# covariance & correlation
+cov_matrix = pf_returns.cov()
+corr_matrix = pf_returns.corr()
+
+# annualised covariance
+cov_matrix_annual = pf_returns.cov() * 252
+
+
+# =========================================================
+# 9 · P O R T F O L I O  R E T U R N  &  V O L A T I L I T Y
+# =========================================================
+
+# define weights
+weights_1 = np.array([0.5, 0.5])
+weights_2 = np.array([0.3, 0.7])
+
+# expected return
+trial = (pf_returns[['RELIANCE.NS','M&M.NS']].mean()) * 252
+
+R_p = np.dot(weights_1, trial)
+print(f"{round(R_p*100,3)}%")
+
+# alternative
+np.dot(pf_returns.mean()*252, weights_1)
+
+# portfolio variance
+pf_var = np.dot(
+    weights_1.T,
+    np.dot(pf_returns.cov()*252, weights_1)
+)
+
+# portfolio volatility
+pf_vol = (np.dot(
+    weights_1.T,
+    np.dot(pf_returns.cov()*252, weights_1)
+)) ** 0.5
+
+print(str(round(pf_vol, 5) * 100) + "%")
+
+
+# =========================================================
+# 10 · Q U I C K  R E F E R E N C E
+# =========================================================
+
+# pandas
+# df.tail(n), df.shift(1), df.diff()
+# df.clip(lower=0), df.clip(upper=0)
+# df.rolling(n).mean(), df.resample('W')
+# df.cov(), df.corr(), df.mean(), df.std(), df.var()
+
+# numpy
+# np.dot(a, b), np.log(x), np.array([...])
+# x ** 0.5, x ** 2
+
+
+# =========================================================
+# 11 · A N N U A L I S A T I O N
+# =========================================================
+
+# return * 252
+# std_dev * sqrt(252)
+# variance * 252
+
+# formulas:
+# Simple return: (P1/P0) - 1
+# Log return: ln(P1/P0)
+# RSI: 100 - 100/(1 + avg_gain/avg_loss)
+# σ_p: sqrt(w^T · Σ · w)
+# R_p: w · R
+
+# 252 = trading days/year
+# √252 ≈ 15.87
