@@ -1,0 +1,272 @@
+install.packages("tseries")
+library(tseries)
+install.packages("urca")
+library(urca)
+install.packages("lmtest")
+library(lmtest)
+install.packages("forecast")
+library(forecast)
+
+mydata<- read.csv("C:/Users/MAHE/Downloads/timeseries_ppi.csv")
+attach(mydata)
+
+# Defining variables
+Y <- ppi
+d.Y <- diff(Y)
+t <- yearqrt
+
+# Descriptive statistics and plotting the data
+summary(Y)
+summary(d.Y)
+
+plot.ts(Y)
+plot.ts(d.Y)
+
+# Augmented Dickey-Fuller test for variable
+adf.test(Y, alternative="stationary", k=0)  # Fixed k lags
+adf.test(Y, alternative="explosive", k=0)
+ur.df(Y, type = "trend", lags = 0)  # urca: trend + lags
+summary(ur.df(Y, type = "trend", lags = 0))
+
+# ADF tests for differenced variable
+adf.test(d.Y, k=0)
+
+# ACF and PACF
+acf(Y)
+pacf(Y)
+
+acf(d.Y)
+pacf(d.Y)
+
+# Model 1. ARIMA(1,1,4) or AR(1)
+arima(d.Y, order = c(1,1,4))
+M1<-arima(d.Y, order = c(1,1,4))
+summary(M1)
+coeftest(M1)
+
+# Model 2. ARIMA(3,1,4) or AR(3)
+arima(d.Y, order = c(3,1,4))
+M2<-arima(d.Y, order = c(3,1,4))
+summary(M2)
+coeftest(M2)
+
+# ARIMA Stability Test
+ar_roots <- arroots(M1)
+print(ar_roots)
+plot(ar_roots)
+ma_roots <- maroots(M1)
+print(ma_roots)
+plot(ma_roots)
+
+# Other Options to plot AR and MA 
+par(mfrow=c(2,2))
+plot(M1, type="ar", main="AR Roots")
+plot(M1, type="ma", main="MA Roots") 
+plot(M1, type="both", main="AR+MA Roots")
+acf(residuals(M1), main="Residuals ACF")  # Ljung-Box test next
+
+#Diagnostics tests
+#1.Ljung-Box Test (Autocorrelation);Tests if residuals are white noise (null: no serial correlation).
+res <- residuals(M1)
+Box.test(res, lag = 20, type = "Ljung-Box")
+checkresiduals(M1)
+
+#2.Normality Test (Jarque-Bera);Checks if residuals are normally distributed.
+jarque.bera.test(res)
+
+#3.ARCH Test (Heteroscedasticity);Detects changing variance in residuals.
+install.packages("FinTS")
+library(FinTS)
+ArchTest(res, lags = 12)
+
+# ARIMA(1,1,4) forecasting
+mydata.M1 <- arima(d.Y, order = c(1,1,4))
+mydata.pred1 <- predict(mydata.M1, n.ahead=100)
+plot.ts(Y)
+lines(mydata.pred1$pred, col="blue")
+lines(mydata.pred1$pred+2*mydata.pred1$se, col="red")
+lines(mydata.pred1$pred-2*mydata.pred1$se, col="red")
+
+# ARIMA(3,1,4) forecasting
+mydata.M2 <- arima(d.Y, order = c(3,1,4))
+mydata.pred1 <- predict(mydata.M1, n.ahead=100)
+plot.ts(d.Y)
+lines(mydata.pred1$pred, col="blue")
+lines(mydata.pred1$pred+2*mydata.pred1$se, col="red")
+lines(mydata.pred1$pred-2*mydata.pred1$se, col="red")
+
+
+install.packages("vars")
+library(vars)
+install.packages("moments")
+library(moments)
+
+library(urca)
+library(tseries)
+mydata<- read.csv("C:/Users/MAHE/Downloads/timeseries_ppi.csv")
+attach(mydata)
+
+# Defining variables
+Y <- ppi
+d.Y <- diff(Y)
+
+X1<-gdp
+d.X1<-diff(X1)
+
+X2<-cpi
+d.X2<-diff(X2)
+
+t <- yearqrt
+
+#Step 1. ADF test for each time series
+adf.test(Y, alternative="stationary", k=0)
+
+adf.test(Y, k=0)
+adf.test(d.Y, k=0)
+adf.test(X1, k=0)
+adf.test(d.X1, k=0)
+adf.test(X2, k=0)
+adf.test(d.X2, k=0)
+
+
+adf_Y <- ur.df(Y, type="trend", lags= 0)
+summary(adf_Y)
+adf_X1 <- ur.df(X1, type="trend", lags= 0)
+summary(adf_Y)
+adf_X2 <- ur.df(X2, type="trend", lags= 0)
+summary(adf_Y)
+
+#Step 2. Select the Optimal Lag Length and Fit the VAR Model
+VARselect(mydata, lag.max = 7, type = "const")
+
+lagselect <- VARselect(mydata, lag.max = 10, type = "const")
+print(VARselect(mydata, lag.max = 10, type = "const"))
+
+#Select specific variables (replace with your column names)
+selected_vars <- mydata[, c("ppi", "gdp")]
+
+# Run VARselect on selected variables only
+lag_select <- VARselect(selected_vars, lag.max = 10, type = "const")
+print(lag_select$selection) # Choose lag based on AIC/HQ/SC
+
+#Step 3. VAR Estimation
+var_model <- VAR(selected_vars, p = 4, type = "const")
+summary(var_model)
+
+#Step 4. Diagnostics
+serial.test(var_model, lags.pt = 16, type = "PT.asymptotic")
+roots(var_model)  # Stability plot
+plot(roots(var_model))
+arch.test(var_model, lags.multi = 5)
+normality.test(var_model)
+
+#Step 5. Forecasting
+forecast <- predict(var_model, n.ahead = 8, ci=0.95)
+# Adjust the margins
+par(mar = c(4, 4, 2, 1))  # Adjust the margins as necessary
+# Plot the forecast
+plot(forecast)
+
+#Step 6. Impulse Response Functions (IRF)
+irf_plot <- irf(var_model, impulse = "ppi", response = "gdp", 
+                n.ahead = 10, boot = TRUE, ci = 0.95, runs = 100)
+plot(irf_plot)
+
+#Step 7.Forecast Error Variance Decomposition (FEVD)
+fevd_plot <- fevd(var_model, n.ahead = 10)
+plot(fevd_plot)
+
+
+##Granger causality tests
+causality(var_model, cause = "gdp")
+
+##VECM in R##
+install.packages("tsDyn")
+library(tsDyn)
+library(vars)
+library(urca)
+library(forecast)
+
+library(tidyverse)
+
+#Loading the Dataset
+
+data <- read_csv(file.choose())
+head(data)
+
+#Declare the Time Series Objects
+
+GDP <- ts(data$lnGDP, start = c(2003,1,31), frequency = 4)
+CPI <- ts(data$lnCPI, start = c(2003,1,31), frequency = 4)
+M3 <- ts(data$lnM3, start = c(2003,1,31), frequency = 4)
+
+#Creating our System
+
+dset <- cbind(GDP,CPI,M3)
+
+#Selecting the Optimal Number of Lags (Recall, this is p - 1)
+
+lagselect <- VARselect(dset, lag.max = 7, type = "const")
+lagselect$selection
+lagselect$criteria
+#Since 5 came up the most, we use (5-1) or 4 lags
+
+selected_vars <- mydata[, c("ppi", "gdp","cpi")]
+lag_select <- VARselect(selected_vars, lag.max = 10, type = "const")
+print(lag_select$selection) # Choose lag based on AIC/HQ/SC
+
+ctest1t <- ca.jo(selected_vars, type = "trace", ecdet = "const", K = 4)
+summary(ctest1t)
+
+ctest1e <- ca.jo(selected_vars, type = "eigen", ecdet = "const", K = 4)
+summary(ctest1e)
+
+#Hence, we have one cointegrating relationship in this model
+
+######################################################################
+
+#Build the VECM Model
+
+Model1 <- VECM(selected_vars, 4, r = 1, estim =("2OLS"))
+summary(Model1)
+
+#Diagnostic Tests
+
+#Need to Transform VECM to VAR
+
+Model1VAR <- vec2var(ctest1t, r = 1)
+
+#Serial Correlation
+
+Serial1 <- serial.test(Model1VAR, lags.pt = 5, type = "PT.asymptotic")
+Serial1
+
+#ARCH Effects
+
+Arch1 <- arch.test(Model1VAR, lags.multi = 15, multivariate.only = TRUE)
+Arch1
+
+#Normality of Residuals
+
+Norm1 <- normality.test(Model1VAR, multivariate.only = TRUE)
+Norm1
+
+#Impulse Response Functions
+
+PPIirf <- irf(Model1VAR, impulse = "gdp", response = "ppi", n.ahead = 20, boot = TRUE)
+plot(M3irf, ylab = "ppi", main = "gdp's shock to ppi")
+
+CPIirf <- irf(Model1VAR, impulse = "gdp", response = "cpi", n.ahead = 20, boot = TRUE)
+plot(CPIirf, ylab = "cpi", main = "gdp's shock to cpi")
+
+GDPirf <- irf(Model1VAR, impulse = "gdp", response = "gdp", n.ahead = 20, boot = TRUE)
+plot(GDPirf, ylab = "gdp", main = "gdp's shock to gdp")
+
+#Variance Decomposition
+
+FEVD1 <- fevd(Model1VAR, n.ahead = 10)
+plot(FEVD1)
+
+
+
+
